@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  color: #1f2937;
+  background-color: #f8f9fa;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.bg-hero {
+  background-image: linear-gradient(rgba(15, 23, 42, 0.52), rgba(15, 23, 42, 0.42)), url('/Imagenes/Home.jpg');
+  background-size: cover;
+  background-position: center;
+}
+
+.glow-node {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: rgba(196, 154, 69, 0.9);
+  box-shadow: 0 0 18px rgba(196, 154, 69, 0.8), 0 0 36px rgba(255, 255, 255, 0.3);
+}
+
+@layer components {
+  .input-field {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition duration-200 placeholder:text-slate-400 focus:border-[#C49A45] focus:ring-2 focus:ring-[#C49A45]/20;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-xl bg-[#1F4E34] px-5 py-3 text-sm font-semibold text-white transition duration-200 hover:bg-[#163c2b] hover:shadow-lg;
+  }
+
+  .btn-primary-gold {
+    @apply inline-flex items-center justify-center rounded-xl bg-[#C49A45] px-5 py-3 text-sm font-semibold text-white transition duration-200 hover:bg-[#b18939] hover:shadow-lg;
+  }
+
+  .link-soft {
+    @apply text-sm font-medium text-[#1F4E34] transition hover:text-[#C49A45];
+  }
+}

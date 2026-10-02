@@ -1,0 +1,48 @@
+services:
+  postgres-sistema:
+    image: pgvector/pgvector:pg16
+    container_name: consulta_laboral_postgres_sistema
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_sistema
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_sistema_data:/var/lib/postgresql/data
+      - ./schema_sistema.sql:/docker-entrypoint-initdb.d/01-schema_sistema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d db_sistema"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres-vectorial:
+    image: pgvector/pgvector:pg16
+    container_name: consulta_laboral_postgres_vectorial
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: db_vectorial
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "55433:5432"
+    volumes:
+      - postgres_vectorial_data:/var/lib/postgresql/data
+      - ./schema_vectorial.sql:/docker-entrypoint-initdb.d/01-schema_vectorial.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d db_vectorial"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_sistema_data:
+    driver: local
+  postgres_vectorial_data:
+    driver: local
