@@ -151,6 +151,7 @@ const buildIntentKeywords = (analysis: QueryAnalysis): string[] => {
     keywords.add('indemnización');
     keywords.add('finiquito');
     keywords.add('beneficios sociales');
+    keywords.add('desahucio');
     keywords.add('antigüedad');
     keywords.add('salario');
     keywords.add('vacaciones');
@@ -181,7 +182,7 @@ const buildIntentKeywords = (analysis: QueryAnalysis): string[] => {
 export const buildFallbackKeywords = (analysis: QueryAnalysis): string[] => {
   const normalizedQuestion = normalizedTokens(analysis.retrievalQuery || '').filter((token) => token.length > 2);
   const prioritized = new Set<string>();
-  const legalTerms = ['despido', 'indemnizacion', 'indemnización', 'finiquito', 'sueldo', 'salario', 'vacaciones', 'aguinaldo', 'jornada', 'horario', 'beneficios', 'normativa', 'laboral', 'quinquenio'];
+  const legalTerms = ['despido', 'indemnizacion', 'indemnización', 'desahucio', 'finiquito', 'sueldo', 'salario', 'vacaciones', 'aguinaldo', 'jornada', 'horario', 'beneficios', 'normativa', 'laboral', 'quinquenio'];
 
   for (const term of buildIntentKeywords(analysis)) {
     const clean = normalizedTokens(term).join(' ');
@@ -198,6 +199,24 @@ export const buildFallbackKeywords = (analysis: QueryAnalysis): string[] => {
 };
 
 const analyzeQuery = (question: string, conversationContext: string): QueryAnalysis => {
+  const normalizedQuestion = question.toLocaleLowerCase('es-BO').trim();
+  const laborPattern = /despid|desvincul|termin|echaron|renunci|finiquito|indemniz|beneficio|sueldo|salario|pago|pagando|adeuda|deuda|cobrar|cu[aá]nto|vacaci|aguinaldo|quinquenio|desahucio|jornada|horario|horas|contrato|patron|jefe|empresa|emplead|trabaj|laboral|ley|art[ií]culo|norma|ministerio|derecho|obligaci|denunci|amenaz|hostig|acos|abuso|represalia|suspensi/i;
+  const isLaborInQuestion = laborPattern.test(normalizedQuestion);
+  const questionNumbers = (question.match(/\b\d+(?:[.,]\d{1,2})?\b/g) || [])
+    .map((value) => Number(value.replace(',', '.')))
+    .filter((value) => value >= 1 && value <= 1_000_000);
+  const isFollowUpData = questionNumbers.length > 0 && Boolean(conversationContext);
+  const isLaborRelevant = isLaborInQuestion || isFollowUpData;
+
+  if (!isLaborRelevant) {
+    return {
+      intent: 'general',
+      facts: {},
+      missingData: [],
+      retrievalQuery: question.trim(),
+    };
+  }
+
   const combined = `${conversationContext}\nUsuario: ${question}`.trim();
   const normalized = combined.toLocaleLowerCase('es-BO');
   const facts: Record<string, string | number | boolean> = {};
@@ -323,11 +342,45 @@ const fallbackLegalSearch = async (analysis: QueryAnalysis, limit: number): Prom
   }));
 };
 
-const cleanGeneratedAnswer = (answer: string): string => answer
-  .replace(/\*\*(.*?)\*\*/gs, '$1')
-  .replace(/__(.*?)__/gs, '$1')
-  .replace(/\n{3,}/g, '\n\n')
-  .trim();
+export const cleanGeneratedAnswer = (answer: string): string => {
+  if (!answer) return '';
+  return answer
+    // Normalize escaped brackets \[ ... \] and $$ ... $$ into clean calculation lines
+    .replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, '\n\n> **Cálculo:** $1\n\n')
+    .replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, '\n\n> **Cálculo:** $1\n\n')
+    // Match bracketed math expressions like [ \text{...} ... ] or [ Indemnización = ... ]
+    .replace(/\[\s*(\\text\{[^\n\]]+|[^[\]\n]*?(?:\\times|\\frac|=)[^[\]\n]*?)\s*\]/g, '\n\n> **Cálculo:** $1\n\n')
+    // Remove \text{...}
+    .replace(/\\text\{([^}]+)\}/g, '$1')
+    .replace(/\\textbf\{([^}]+)\}/g, '**$1**')
+    .replace(/\\textit\{([^}]+)\}/g, '*$1*')
+    // Convert mathematical operators
+    .replace(/\\times/g, '×')
+    .replace(/\\cdot/g, '·')
+    .replace(/\\div/g, '÷')
+    .replace(/\\approx/g, '≈')
+    .replace(/\\le(q)?\b/g, '≤')
+    .replace(/\\ge(q)?\b/g, '≥')
+    // Convert fractions \frac{num}{den} -> (num) / den
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1) / $2')
+    // Remove sizing/bracketing commands
+    .replace(/\\left\(/g, '(')
+    .replace(/\\right\)/g, ')')
+    .replace(/\\left\[/g, '[')
+    .replace(/\\right\]/g, ']')
+    // Spacing
+    .replace(/\\quad/g, ' ')
+    .replace(/\\qquad/g, '  ')
+    .replace(/\\[,;!]/g, ' ')
+    .replace(/\\\\/g, '\n')
+    // Strip isolated inline dollar signs containing text/math
+    .replace(/\$([^$\n]+)\$/g, (_m, p1) => {
+      return p1.replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\times/g, '×').trim();
+    })
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{4,}/g, '\n\n')
+    .trim();
+};
 
 export const askLegalQuestion = async (question: string, conversationContext = ''): Promise<ChatResult> => {
   const startedAt = performance.now();
@@ -336,6 +389,27 @@ export const askLegalQuestion = async (question: string, conversationContext = '
   const analysis = analyzeQuery(question, conversationContext);
   const analysisElapsed = performance.now() - analysisStarted;
   console.info('[rag][timing]', { stage: 'analysis', milliseconds: Number(analysisElapsed.toFixed(2)), intent: analysis.intent });
+
+  if (analysis.intent === 'general') {
+    const generalPrompt = `Eres un asistente inteligente especializado en orientación sobre legislación laboral boliviana.
+El usuario ha realizado la siguiente consulta: "${question}".
+
+INSTRUCCIONES CLARAS:
+1. Responde a la pregunta del usuario con total amabilidad, precisión y brevedad (por ejemplo, si pregunta por la mezcla de colores amarillo y azul, responde claramente que dan color verde).
+2. Agrega una breve frase cordial al final recordando que tu especialidad y función principal en esta plataforma es la asesoría en Derecho Laboral Boliviano (cálculo de finiquitos, indemnizaciones, vacaciones y derechos del trabajador).
+3. ESTÁ TOTALMENTE PROHIBIDO inventar cálculos de liquidación, finiquitos, sueldos ficticios (como 3.000 Bs.) ni años de trabajo cuando la pregunta actual no trata sobre temas laborales.`;
+
+    const answer = await openAIGenerateRequest(config, generalPrompt, config.temperatura, config.maxTokens);
+    const totalElapsed = performance.now() - startedAt;
+    console.info('[rag][timing]', { stage: 'general_response', milliseconds: Number(totalElapsed.toFixed(2)) });
+    return {
+      answer: cleanGeneratedAnswer(answer),
+      citations: [],
+      references: [],
+      hasContext: true,
+      analysis,
+    };
+  }
 
   const embeddingStarted = performance.now();
   const embedding = await requestQuestionEmbedding(analysis.retrievalQuery);
@@ -402,7 +476,63 @@ export const askLegalQuestion = async (question: string, conversationContext = '
   })).values());
   const references = fragments.map((fragment) => ({ fragmentId: fragment.id_fragmento, relevance: Number(fragment.rerankScore || fragment.semanticRelevance) }));
   const context = buildContext(fragments);
-  const prompt = `${config.systemPrompt.slice(0, 3500)}\n\nREGLAS DEL RAG:\n- Analiza la consulta y responde como asistente laboral de Bolivia.\n- Usa únicamente las FUENTES del contexto para afirmar normas, artículos, fechas, porcentajes o montos.\n- No inventes referencias ni conviertas coincidencias de palabras en una conclusión jurídica.\n- Distingue datos proporcionados de datos faltantes y pregunta solo por lo necesario.\n- Sintetiza la evidencia; no copies fragmentos extensos.\n- Si la evidencia no basta, dilo expresamente.\n- El historial es contexto conversacional, no evidencia legal.\n\nANÁLISIS DE LA CONSULTA:\n${JSON.stringify(analysis)}\n\nHISTORIAL RELEVANTE:\n${conversationContext.slice(-1500) || 'Sin historial previo'}\n\nCONTEXTO LEGAL RECUPERADO:\n${context}\n\nCONSULTA ACTUAL:\n${question}`;
+  const prompt = `${config.systemPrompt}
+
+REGLAS DEL RAG Y FUNDAMENTOS LABORALES BOLIVIANOS OBLIGATORIOS:
+- Analiza la consulta y responde como asistente legal laboral experto de Bolivia.
+- Usa rigurosamente las FUENTES del contexto normativo para respaldar normas, artículos, porcentajes y cálculos.
+- NUNCA inventes artículos, porcentajes, plazos ni topes inexistentes en la legislación boliviana.
+- VACACIONES (Art. 44 de la Ley General del Trabajo - LGT, D.S. N.º 3161, D.S. N.º 12058 y Art. 33 del D.R. 224):
+  * Escala legal progresiva por años cumplidos: de 1 a 5 años = 15 días hábiles; de 5 a 10 años = 20 días hábiles; de 10 años en adelante = 30 días hábiles.
+  * PRIORIDAD ABSOLUTA DEL DATO DECLARADO POR EL USUARIO (DATO DE ENTRADA RÍGIDO):
+    Si el usuario indica una cantidad específica de días de vacaciones pendientes o acumulados (ejemplo: "tengo 30 días de vacaciones"), DEBES USAR OBLIGATORIAMENTE ESE NÚMERO EXACTO (30 días) PARA EL CÁLCULO MONETARIO Y EN LA TABLA FINAL.
+    ESTÁ ESTRICTAMENTE PROHIBIDO sobrescribir o reducir los días declarados por el usuario por la escala legal anual de la LGT (ESTÁ PROHIBIDO cambiar 30 por 20 días solo porque tenga 5 años de servicio).
+    SEPARACIÓN OBLIGATORIA DE CONCEPTOS:
+    a) CÁLCULO MONETARIO: Días declarados (30) × Sueldo diario (40 Bs.) = 1.200 Bs. (NUNCA reduzcas a 20 × 40 = 800 Bs.).
+    b) EXPLICACIÓN NORMATIVA: Explica pedagógicamente que la escala legal anual por un solo año de trabajo con 5 años es de 20 días hábiles, y que por tanto sus 30 días declarados corresponden a la acumulación legal de gestiones no gozadas o truncas pendientes de pago.
+  * COHERENCIA INTERNA: El monto de vacaciones en la tabla de liquidación y en el total general DEBE COINCIDIR con los días declarados por el usuario. No contradigas la tabla con las notas.
+  * Sueldo diario para compensar vacaciones = Sueldo Promedio / 30 días; Monto Vacaciones = Sueldo Diario × Días declarados.
+  * NO fundamentes el descanso anual ni su cómputo en el Art. 46 de la CPE; la norma formal aplicable es el Art. 44 de la LGT y D.S. 3161.
+- INDEMNIZACIÓN POR TIEMPO DE SERVICIOS (Art. 13 de la LGT y Decreto Supremo N.º 110):
+  * Equivale exactamente a UN (1) MES DE SUELDO PROMEDIABLE por cada año de trabajo continuo cumplido, más duodécimas proporcionales de meses y días.
+  * En Bolivia NO EXISTE TOPE O LÍMITE MÁXIMO DE 12 MESES NI DE 12 AÑOS para la indemnización. Corresponde por todos los años efectivamente trabajados.
+  * Sueldo Promedio Indemnizable (SPI) = promedio de los últimos 3 meses: (Mes1 + Mes2 + Mes3) / 3.
+  * Corresponde indemnización cumplidos noventa (90) días de servicio, INCLUSO EN CASO DE RETIRO O RENUNCIA VOLUNTARIA (D.S. 110).
+  * NO cites el Art. 49 de la CPE para restringir montos o imponer límites inexistentes.
+- DESAHUCIO (Art. 12 de la LGT y Decreto Supremo N.º 28699):
+  * Corresponde a TRES (3) MESES de sueldo promediable adicionales únicamente en caso de DESPIDO INJUSTIFICADO, FORZOSO O INTEMPESTIVO (retiro intempestivo sin preaviso legal).
+  * En RETIRO O RENUNCIA VOLUNTARIA el desahucio NO aplica, pero la indemnización por años trabajados y las vacaciones no gozadas se mantienen plenamente exigibles.
+- PROHIBICIÓN ESTRICTA DE SINTAXIS LATEX Y CÓDIGO:
+  * NUNCA uses sintaxis ni comandos LaTeX como \\text{...}, \\times, \\frac{...}{...}, \\[ ... \\], \\( ... \\), $$ ni corchetes con comandos matemáticos [ \\text{...} ].
+  * Escribe todos los cálculos matemáticos en texto limpio, natural y legible:
+    - Ejemplo correcto: Sueldo Promedio = (1.200 + 1.200 + 1.200) / 3 = 1.200 Bs.
+    - Ejemplo correcto: Indemnización = 1.200 Bs. × 5 años = 6.000 Bs.
+    - Ejemplo correcto: Vacaciones = (1.200 Bs. / 30) × 30 días = 1.200 Bs.
+    - Ejemplo correcto: Desahucio = 1.200 Bs. × 3 meses = 3.600 Bs.
+- ESTRUCTURA DE RESPUESTA EN CÁLCULOS:
+  * Si la consulta solicita estimar o calcular finiquito o liquidación, estructura con Markdown:
+    ## 1. Sueldo Promedio Promediable
+    ## 2. Pago por Vacaciones Cumplidas y Truncas
+    ## 3. Desglose Estimado de Liquidación (Finiquito) con una tabla Markdown comparativa (| Concepto | Detalle de Cálculo | Monto Estimado (Bs.) |) que detalle:
+      - Indemnización por los años de servicio
+      - Vacaciones pendientes
+      - Desahucio (si hubo despido intempestivo)
+      - Total Estimado (Sin Desahucio / Renuncia)
+      - Total Estimado (Con Desahucio / Despido)
+    Incluye una nota aclaratoria sobre la diferencia entre retiro voluntario y despido intempestivo.
+
+ANÁLISIS DE LA CONSULTA:
+${JSON.stringify(analysis)}
+${analysis.facts.vacacionesDias ? `\nRECORDATORIO CRÍTICO DE CÁLCULO: El usuario declaró explícitamente ${analysis.facts.vacacionesDias} días de vacaciones pendientes. Tu cálculo monetario DEBE multiplicar exactamente ${analysis.facts.vacacionesDias} días × Sueldo Diario. NO cambies ni reduzcas este valor a 20 días.\n` : ''}
+
+HISTORIAL RELEVANTE:
+${conversationContext.slice(-1500) || 'Sin historial previo'}
+
+CONTEXTO LEGAL RECUPERADO:
+${context}
+
+CONSULTA ACTUAL:
+${question}`;
   const responseInstruction = getResponseLengthInstruction(config.maxTokens);
   const promptWithBudget = `${prompt}\n\nLIMITE DE RESPUESTA:\n${responseInstruction}\nNo cortes una idea a la mitad: si falta espacio, resume y conserva primero la conclusion y la base legal.`;
 

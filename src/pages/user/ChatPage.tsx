@@ -1,6 +1,10 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Check, Copy, Download, MessageCircle, Plus, RefreshCw } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { useAuth } from '../../context/AuthContext';
 
 interface Citation {
@@ -27,6 +31,44 @@ const COMMUNICATION_ERROR = 'Error de comunicación con el servidor';
 
 interface ChatSummary { id: number; title: string; createdAt: string; updatedAt: string | null; messageCount: number; }
 interface ChatDetail { id: number; title: string; messages: Array<{ question: string; answer: string; createdAt: string }>; }
+
+export const cleanLatexMath = (text: string): string => {
+  if (!text) return '';
+  return text
+    // Normalize escaped brackets \[ ... \] and $$ ... $$ into clean calculation lines
+    .replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, '\n\n> **Cálculo:** $1\n\n')
+    .replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, '\n\n> **Cálculo:** $1\n\n')
+    // Match bracketed math expressions like [ \text{...} ... ] or [ Indemnización = ... ]
+    .replace(/\[\s*(\\text\{[^\n\]]+|[^[\]\n]*?(?:\\times|\\frac|=)[^[\]\n]*?)\s*\]/g, '\n\n> **Cálculo:** $1\n\n')
+    // Remove \text{...}
+    .replace(/\\text\{([^}]+)\}/g, '$1')
+    .replace(/\\textbf\{([^}]+)\}/g, '**$1**')
+    .replace(/\\textit\{([^}]+)\}/g, '*$1*')
+    // Convert mathematical operators
+    .replace(/\\times/g, '×')
+    .replace(/\\cdot/g, '·')
+    .replace(/\\div/g, '÷')
+    .replace(/\\approx/g, '≈')
+    .replace(/\\le(q)?\b/g, '≤')
+    .replace(/\\ge(q)?\b/g, '≥')
+    // Convert fractions \frac{num}{den} -> (num) / den
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1) / $2')
+    // Remove sizing/bracketing commands
+    .replace(/\\left\(/g, '(')
+    .replace(/\\right\)/g, ')')
+    .replace(/\\left\[/g, '[')
+    .replace(/\\right\]/g, ']')
+    // Spacing
+    .replace(/\\quad/g, ' ')
+    .replace(/\\qquad/g, '  ')
+    .replace(/\\[,;!]/g, ' ')
+    .replace(/\\\\/g, '\n')
+    // Strip isolated inline dollar signs containing text/math
+    .replace(/\$([^$\n]+)\$/g, (_m, p1) => {
+      return p1.replace(/\\text\{([^}]+)\}/g, '$1').replace(/\\times/g, '×').trim();
+    })
+    .replace(/[ \t]{2,}/g, ' ');
+};
 
 export default function ChatPage(): JSX.Element {
   const { token } = useAuth();
@@ -182,7 +224,51 @@ export default function ChatPage(): JSX.Element {
           {!isLoadingHistory && messages.length === 0 && <div className="py-12 text-center text-slate-500"><MessageCircle className="mx-auto mb-3 text-[#C49A45]" size={30} /><p>Escribe una consulta para iniciar una conversación.</p></div>}
           {messages.map((message, index) => (
             <article key={`${message.role}-${index}`} className={`max-w-3xl rounded-2xl p-4 ${message.role === 'user' ? 'ml-auto bg-[#1F4E34] text-white' : 'bg-[#F8F9FA] text-slate-800'}`}>
-              <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
+              {message.role === 'user' ? (
+                <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
+              ) : (
+                <div className="text-sm leading-relaxed text-slate-800">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
+                    components={{
+                      h1: ({ children }) => <h1 className="mt-4 mb-2 text-xl font-bold text-[#1F4E34]">{children}</h1>,
+                      h2: ({ children }) => <h2 className="mt-4 mb-2.5 border-b border-slate-200 pb-1.5 text-lg font-bold text-[#1F4E34]">{children}</h2>,
+                      h3: ({ children }) => <h3 className="mt-3 mb-1.5 text-base font-semibold text-[#1F4E34]">{children}</h3>,
+                      p: ({ children }) => <p className="mb-2.5 leading-relaxed text-sm text-slate-800">{children}</p>,
+                      strong: ({ children }) => <strong className="font-bold text-slate-900">{children}</strong>,
+                      ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-slate-800">{children}</ul>,
+                      ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-slate-800">{children}</ol>,
+                      li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                      blockquote: ({ children }) => (
+                        <blockquote className="my-3 rounded-xl border-l-4 border-[#1F4E34] bg-emerald-50/80 p-3.5 text-sm font-medium text-slate-800 shadow-xs">
+                          {children}
+                        </blockquote>
+                      ),
+                      table: ({ children }) => (
+                        <div className="my-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                          <table className="min-w-full divide-y divide-slate-200 text-left text-xs sm:text-sm">
+                            {children}
+                          </table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-[#1F4E34] text-white font-semibold">{children}</thead>,
+                      th: ({ children }) => <th className="px-3.5 py-2.5 font-semibold text-white tracking-wide">{children}</th>,
+                      tbody: ({ children }) => <tbody className="divide-y divide-slate-100 bg-white">{children}</tbody>,
+                      tr: ({ children }) => <tr className="hover:bg-slate-50 transition-colors">{children}</tr>,
+                      td: ({ children }) => <td className="px-3.5 py-2.5 text-slate-700">{children}</td>,
+                      hr: () => <hr className="my-3.5 border-slate-200" />,
+                      code: ({ children }) => (
+                        <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-[#1F4E34]">
+                          {children}
+                        </code>
+                      ),
+                    }}
+                  >
+                    {cleanLatexMath(message.content)}
+                  </ReactMarkdown>
+                </div>
+              )}
               {message.role === 'assistant' && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-300/70 pt-3"><button type="button" onClick={() => void copyMessage(message.content, index)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white" aria-label="Copiar respuesta">{copiedMessage === index ? <Check size={14} /> : <Copy size={14} />}{copiedMessage === index ? 'Copiada' : 'Copiar'}</button><button type="button" onClick={() => downloadMessage(message.content, index)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white" aria-label="Descargar respuesta"><Download size={14} />Descargar</button></div>}
               {message.citations && message.citations.some((citation) => citation.normativa || citation.tipo || citation.numero || citation.articulo) && (
                 <details open className="mt-4 border-t border-slate-300/70 pt-3">
