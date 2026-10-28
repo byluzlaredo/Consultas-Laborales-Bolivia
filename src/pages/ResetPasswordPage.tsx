@@ -1,5 +1,6 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { getPasswordRequirementsMessage } from '../utils/passwordValidation';
 
 interface ResetPasswordForm {
   passwordNueva: string;
@@ -12,9 +13,6 @@ interface FormErrors {
   general?: string;
   success?: string;
 }
-
-const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_PATTERN = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])/;
 
 export default function ResetPasswordPage(): JSX.Element {
   const navigate = useNavigate();
@@ -52,10 +50,9 @@ export default function ResetPasswordPage(): JSX.Element {
 
     if (!form.passwordNueva.trim()) {
       newErrors.passwordNueva = 'La contraseña es requerida';
-    } else if (form.passwordNueva.length < PASSWORD_MIN_LENGTH) {
-      newErrors.passwordNueva = `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`;
-    } else if (!PASSWORD_PATTERN.test(form.passwordNueva)) {
-      newErrors.passwordNueva = 'Debe incluir mayúscula, número y carácter especial (!@#$%^&*)';
+    } else {
+      const passwordError = getPasswordRequirementsMessage(form.passwordNueva);
+      if (passwordError) newErrors.passwordNueva = passwordError;
     }
 
     if (!form.passwordConfirm.trim()) {

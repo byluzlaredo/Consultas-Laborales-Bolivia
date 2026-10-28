@@ -11,6 +11,7 @@ import {
 } from '../../database/index.js';
 import { emailService } from '../email/email.service.js';
 import { DEPARTAMENTOS_BOLIVIA } from './auth.dto.js';
+import { getPasswordRequirementsMessage } from './passwordValidation.js';
 import type {
   RegisterDto,
   LoginDto,
@@ -108,12 +109,8 @@ export class AuthService {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.correo)) {
       return { valid: false, error: 'El correo electrónico no es válido' };
     }
-    if (data.password.length < 8) {
-      return { valid: false, error: 'La contraseña debe tener al menos 8 caracteres' };
-    }
-    if (!/[A-Z]/.test(data.password) || !/[0-9]/.test(data.password) || !/[!@#$%^&*]/.test(data.password)) {
-      return { valid: false, error: 'La contraseña debe contener mayúscula, número y carácter especial' };
-    }
+    const passwordError = getPasswordRequirementsMessage(data.password);
+    if (passwordError) return { valid: false, error: passwordError };
     if (data.password !== data.passwordConfirm) {
       return { valid: false, error: 'Las contraseñas no coinciden' };
     }
@@ -333,10 +330,8 @@ export class AuthService {
   }
 
   static validateNewPassword(password: string): void {
-    if (!password || password.length < 8) throw new Error('La contraseña no cumple con los requisitos mínimos de seguridad.');
-    if (!/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[!@#$%^&*]/.test(password)) {
-      throw new Error('La contraseña no cumple con los requisitos mínimos de seguridad.');
-    }
+    const error = getPasswordRequirementsMessage(password);
+    if (error) throw new Error(error);
   }
 
   static async validateResetToken(data: ValidateResetTokenDto): Promise<void> {

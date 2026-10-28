@@ -1,6 +1,7 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { getPasswordRequirementsMessage } from '../utils/passwordValidation';
 
 interface ProfileForm {
   nombre: string;
@@ -17,9 +18,6 @@ interface ChangePasswordForm {
 interface FormErrors {
   [key: string]: string;
 }
-
-const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_PATTERN = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])/;
 
 export default function ProfilePage(): JSX.Element {
   const navigate = useNavigate();
@@ -72,10 +70,9 @@ export default function ProfilePage(): JSX.Element {
     }
     if (!passwordForm.passwordNueva.trim()) {
       errors.passwordNueva = 'Ingresa una nueva contraseña';
-    } else if (passwordForm.passwordNueva.length < PASSWORD_MIN_LENGTH) {
-      errors.passwordNueva = `Mínimo ${PASSWORD_MIN_LENGTH} caracteres`;
-    } else if (!PASSWORD_PATTERN.test(passwordForm.passwordNueva)) {
-      errors.passwordNueva = 'Debe incluir mayúscula, número y carácter especial (!@#$%^&*)';
+    } else {
+      const passwordError = getPasswordRequirementsMessage(passwordForm.passwordNueva);
+      if (passwordError) errors.passwordNueva = passwordError;
     }
     if (!passwordForm.passwordConfirm.trim()) {
       errors.passwordConfirm = 'Confirma tu nueva contraseña';

@@ -18,3 +18,11 @@ export interface AdminUpdateUserDto {
   rol?: 'USUARIO' | 'ADMINISTRADOR';
   activo?: boolean;
 }
+
+export interface CreateAdminUserDto {
+  nombre: string;
+  apellido: string;
+  correo: string;
+  password: string;
+  passwordConfirm: string;
+}

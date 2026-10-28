@@ -1,6 +1,11 @@
 import type { Request, Response } from 'express';
 import { UsersService } from './users.service.js';
-import type { UpdateProfileDto, ChangePasswordDto, AdminUpdateUserDto } from './users.dto.js';
+import type {
+  UpdateProfileDto,
+  ChangePasswordDto,
+  AdminUpdateUserDto,
+  CreateAdminUserDto,
+} from './users.dto.js';
 
 /**
  * GET /api/users/profile
@@ -90,6 +95,30 @@ export const getAllUsersController = async (req: Request, res: Response): Promis
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error al obtener usuarios';
     res.status(500).json({ success: false, message });
+  }
+};
+
+/**
+ * POST /api/admin/users
+ * Crear una cuenta administrativa (solo admin autenticado)
+ */
+export const createAdminUserController = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = await UsersService.createAdminUser(req.body as CreateAdminUserDto);
+    res.status(201).json({
+      success: true,
+      message: 'Cuenta administrativa creada correctamente',
+      data: user,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error al crear cuenta administrativa';
+    const duplicate = message.includes('ya se encuentra registrado') ||
+      (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505');
+    const invalidInput = message.includes('obligatorios') ||
+      message.includes('correo electrónico no es válido') ||
+      message.includes('contraseña') ||
+      message.includes('no coinciden');
+    res.status(duplicate ? 409 : invalidInput ? 400 : 500).json({ success: false, message });
   }
 };
 

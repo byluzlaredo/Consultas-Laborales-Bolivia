@@ -28,5 +28,9 @@ test('caja blanca valida correo y complejidad de contraseña mediante regex', ()
   // Assert
   assert.deepEqual(validResult, { valid: true });
   assert.ok(emailResults.every((result) => !result.valid && result.error === 'El correo electrónico no es válido'));
-  assert.ok(passwordResults.every((result) => !result.valid && result.error === 'La contraseña debe contener mayúscula, número y carácter especial'));
+  assert.deepEqual(passwordResults.map((result) => result.error), [
+    'La contraseña no cumple los requisitos. Requisitos faltantes: incluir una letra mayúscula.',
+    'La contraseña no cumple los requisitos. Requisitos faltantes: incluir un número.',
+    'La contraseña no cumple los requisitos. Requisitos faltantes: incluir un carácter especial (!@#$%^&*).',
+  ]);
 });

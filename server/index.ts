@@ -23,6 +23,7 @@ import {
   updateProfileController,
   changePasswordController as userChangePasswordController,
   getAllUsersController,
+  createAdminUserController,
   getUserByIdController,
   updateUserController,
   deactivateUserController,
@@ -126,6 +127,7 @@ app.post('/api/users/change-password', authGuard, userChangePasswordController);
 
 // ==================== ADMIN: GESTIÓN DE USUARIOS ====================
 app.get('/api/admin/users', authGuard, adminGuard, getAllUsersController);
+app.post('/api/admin/users', authGuard, adminGuard, createAdminUserController);
 app.get('/api/admin/users/estadisticas', authGuard, adminGuard, getUserStatisticsController);
 app.get('/api/admin/users/:id', authGuard, adminGuard, getUserByIdController);
 app.patch('/api/admin/users/:id', authGuard, adminGuard, updateUserController);

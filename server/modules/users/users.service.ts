@@ -1,6 +1,12 @@
 import bcrypt from 'bcrypt';
 import { queryDb, queryDbSingle, execDb } from '../../database/index.js';
-import type { UpdateProfileDto, ChangePasswordDto, AdminUpdateUserDto } from './users.dto.js';
+import { getPasswordRequirementsMessage } from '../auth/passwordValidation.js';
+import type {
+  UpdateProfileDto,
+  ChangePasswordDto,
+  AdminUpdateUserDto,
+  CreateAdminUserDto,
+} from './users.dto.js';
 
 interface UsuarioDb {
   id_usuario: number;
@@ -28,6 +34,63 @@ export interface UserResponse {
 }
 
 export class UsersService {
+  static validateAdminUserInput(data: CreateAdminUserDto): { valid: boolean; error?: string } {
+    if (
+      typeof data?.nombre !== 'string' ||
+      typeof data.apellido !== 'string' ||
+      typeof data.correo !== 'string' ||
+      typeof data.password !== 'string' ||
+      typeof data.passwordConfirm !== 'string' ||
+      !data.nombre.trim() ||
+      !data.apellido.trim() ||
+      !data.correo.trim() ||
+      !data.password
+    ) {
+      return { valid: false, error: 'Por favor, complete todos los campos obligatorios.' };
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.correo.trim())) {
+      return { valid: false, error: 'El correo electrónico no es válido' };
+    }
+
+    const passwordError = getPasswordRequirementsMessage(data.password);
+    if (passwordError) return { valid: false, error: passwordError };
+
+    if (data.password !== data.passwordConfirm) {
+      return { valid: false, error: 'Las contraseñas no coinciden' };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Crear una cuenta administrativa. El rol se fija en el servidor.
+   */
+  static async createAdminUser(data: CreateAdminUserDto): Promise<UserResponse> {
+    const validation = this.validateAdminUserInput(data);
+    if (!validation.valid) throw new Error(validation.error);
+
+    const nombre = data.nombre.trim();
+    const apellido = data.apellido.trim();
+    const correo = data.correo.trim().toLowerCase();
+    const existing = await queryDbSingle<UsuarioDb>(
+      'SELECT id_usuario FROM usuario WHERE LOWER(correo) = LOWER($1)',
+      [correo]
+    );
+    if (existing) throw new Error('El correo electrónico ya se encuentra registrado');
+
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const user = await queryDbSingle<UsuarioDb>(
+      `INSERT INTO usuario (nombre, apellido, correo, password_hash, departamento, rol, activo, fecha_registro)
+       VALUES ($1, $2, $3, $4, NULL, 'ADMINISTRADOR', TRUE, CURRENT_TIMESTAMP)
+       RETURNING *`,
+      [nombre, apellido, correo, passwordHash]
+    );
+
+    if (!user) throw new Error('No se pudo crear la cuenta administrativa');
+    return this.toUserResponse(user);
+  }
+
   /**
    * Obtener perfil del usuario autenticado
    */
@@ -93,14 +156,8 @@ export class UsersService {
     }
 
     const newPassword = data.passwordNueva || '';
-    if (
-      newPassword.length < 8 ||
-      !/[A-Z]/.test(newPassword) ||
-      !/[0-9]/.test(newPassword) ||
-      !/[!@#$%^&*]/.test(newPassword)
-    ) {
-      throw new Error('La contraseña no cumple con los requisitos mínimos de seguridad.');
-    }
+    const passwordError = getPasswordRequirementsMessage(newPassword);
+    if (passwordError) throw new Error(passwordError);
 
     const user = await queryDbSingle<UsuarioDb>(
       'SELECT * FROM usuario WHERE id_usuario = $1',

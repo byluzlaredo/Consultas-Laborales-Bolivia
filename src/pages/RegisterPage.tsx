@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { DEPARTAMENTOS_BOLIVIA, type RegistroUsuarioInput } from '../types/auth';
+import { getPasswordRequirementsMessage } from '../utils/passwordValidation';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -41,14 +42,9 @@ export function RegisterPage() {
 
     if (!formData.password) {
       errors.password = 'La contraseña es requerida';
-    } else if (formData.password.length < 8) {
-      errors.password = 'La contraseña debe tener al menos 8 caracteres';
-    } else if (!/[A-Z]/.test(formData.password)) {
-      errors.password = 'La contraseña debe contener al menos una mayúscula';
-    } else if (!/[0-9]/.test(formData.password)) {
-      errors.password = 'La contraseña debe contener al menos un número';
-    } else if (!/[!@#$%^&*]/.test(formData.password)) {
-      errors.password = 'La contraseña debe contener al menos un carácter especial (!@#$%^&*)';
+    } else {
+      const passwordError = getPasswordRequirementsMessage(formData.password);
+      if (passwordError) errors.password = passwordError;
     }
 
     if (!formData.passwordConfirm) {
@@ -204,7 +200,7 @@ export function RegisterPage() {
             />
             {formErrors.password && <p className="mt-1 text-sm text-red-600">{formErrors.password}</p>}
             <p className="mt-2 text-xs text-gray-600">
-              Mínimo 8 caracteres, con mayúscula, número y carácter especial
+              Mínimo 8 caracteres, con una mayúscula, un número y un carácter especial (!@#$%^&*).
             </p>
           </div>
 
